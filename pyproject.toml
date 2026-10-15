@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-monitor"
+version = "0.1.0"
+description = "Read-only anomaly monitor for AI agent telemetry (PoC)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["openai>=1.40", "azure-identity>=1.17"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+agent-monitor = "agent_monitor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

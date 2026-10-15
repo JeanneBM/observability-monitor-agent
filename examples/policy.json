@@ -1,0 +1,29 @@
+{
+  "agents": {
+    "diagnostic": {
+      "allowed_tools": ["kubectl_get", "kubectl_describe", "kubectl_logs", "acr_check"],
+      "max_tokens_per_run": 20000,
+      "max_cost_per_run": 0.50,
+      "max_tool_repeats": 3
+    },
+    "remediation": {
+      "allowed_tools": ["acr_check", "kubectl_patch", "rollout_status"],
+      "max_tokens_per_run": 20000,
+      "max_cost_per_run": 0.50,
+      "max_tool_repeats": 3,
+      "require_verification": true
+    },
+    "rag": {
+      "allowed_tools": ["retrieve"],
+      "max_tokens_per_run": 12000,
+      "max_cost_per_run": 0.30,
+      "max_tool_repeats": 3,
+      "require_citations": true
+    }
+  },
+  "drift": {
+    "min_runs": 10,
+    "escalation_delta": 0.25,
+    "tool_calls_ratio": 2.0
+  }
+}
