@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -52,6 +53,23 @@ class Event:
     def __post_init__(self) -> None:
         if self.type not in EVENT_TYPES:
             raise ValueError(f"unknown event type: {self.type!r}")
+        if not all(isinstance(v, str) and v for v in (self.id, self.agent, self.run_id)):
+            raise ValueError('Event identifiers must be nonempty strings')
+        if not isinstance(self.ts, (int, float)) or not math.isfinite(self.ts):
+            raise ValueError('Invalid event timestamp')
+        for value in (self.tokens, self.cost_usd, self.latency_ms):
+            if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError('Usage measurements must be nonnegative finite numbers')
+        if not isinstance(self.attrs, dict):
+            raise ValueError('attrs must be an object')
+        if not isinstance(self.citations, (list, tuple)) or not isinstance(self.retrieved, (list, tuple)):
+            raise ValueError('Citation and retrieval IDs must be arrays')
+        if not all(isinstance(v, str) for v in (*self.citations, *self.retrieved)):
+            raise ValueError('Citation and retrieval IDs must be strings')
+        if self.type == 'tool_call' and (not isinstance(self.tool, str) or not self.tool):
+            raise ValueError('tool_call requires a tool name')
+        if self.args_hash is not None and not isinstance(self.args_hash, str):
+            raise ValueError('args_hash must be a string')
         self.citations = tuple(self.citations)
         self.retrieved = tuple(self.retrieved)
 

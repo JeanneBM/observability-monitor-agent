@@ -45,7 +45,7 @@ def tool_loop(run: list[Event], policy: Policy) -> list[Finding]:
     ap = policy.agent(run[0].agent)
     if ap is None:
         return []
-    calls = [e for e in run if e.type == "tool_call"]
+    calls = [e for e in run if e.type == "tool_call" and e.args_hash is not None]
     counts = Counter((e.tool, e.args_hash) for e in calls)
     out = []
     for (tool, h), n in counts.items():
@@ -96,6 +96,8 @@ def unverified_claim(run: list[Event], policy: Policy) -> list[Finding]:
     for i, e in enumerate(run):
         if e.type == "claim" and e.status == "fixed":
             later = [v for v in run[i + 1:] if v.type == "verification"]
+            if not later and not any(v.type == 'run_finished' for v in run[i + 1:]):
+                continue  # An open run may still produce its rollout verification.
             if not later:
                 out.append(
                     Finding(
@@ -121,7 +123,7 @@ def citation_check(run: list[Event], policy: Policy) -> list[Finding]:
         return []
     out = []
     for e in run:
-        if e.type != "answer":
+        if e.type != "answer" or e.status == "abstained":
             continue
         if not e.retrieved:
             out.append(

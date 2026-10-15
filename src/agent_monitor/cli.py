@@ -33,7 +33,16 @@ def main(argv: list[str] | None = None) -> int:
     g = sub.add_parser("generate", help="write sample telemetry to a directory")
     g.add_argument("--out", required=True)
 
+    w = sub.add_parser('watch', help='Continuously observe JSONL files and Kubernetes logs')
+    w.add_argument('--config', required=True)
+    w.add_argument('--output', required=True)
+    w.add_argument('--interval', type=int, default=5)
+    w.add_argument('--once', action='store_true')
     args = p.parse_args(argv)
+    if args.cmd == 'watch':
+        from .live import watch
+        watch(args.config, args.output, interval=args.interval, once=args.once)
+        return 0
 
     if args.cmd == "analyze":
         policy = load_policy(args.policy)

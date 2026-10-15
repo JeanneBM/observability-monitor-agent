@@ -6,7 +6,7 @@ Built as a companion to the Azure Kubernetes Agentic Ops, Foundry RAG and LangGr
 
 ## Design
 
-- **Read-only.** The monitor has no tools and no write path to the agents it watches. It flags and escalates; a human decides.
+- **Read-only.** Detection has no write path to observed agents. The continuous collector uses only Kubernetes pod/log reads and local JSONL reads; findings are written locally.
 - **Telemetry in, not conclusions.** Input is a shared JSONL event schema (`schema.py`). Raw tool arguments are never stored, only a hash.
 - **Deterministic detection first.** Every rule is a pure function with no LLM or network call.
 - **LLM only for triage.** `triage.py` summarises findings for humans. It sees findings, not raw traffic, and if it fails the deterministic report is still produced.
@@ -70,14 +70,59 @@ examples/       policy.json
 
 ## Limitations
 
-- Telemetry is synthetic; no live AKS / Foundry / LangGraph integration yet.
+- Runtime emitters are integrated in the companion AKS, RAG and LangGraph projects; the synthetic scenarios remain offline detector tests.
 - Drift detection uses simple thresholds against a fixed baseline, not statistical tests.
-- Batch analysis only; no streaming or alert delivery.
+- Continuous polling is available via `watch`; outbound alert delivery is not implemented.
 - Rules are only as good as the telemetry: an agent that does not emit events is invisible.
 
 ## Next steps
 
-1. Emit these events from the existing three projects.
+1. Host the collector durably in Azure for unattended operation.
 2. Map OpenTelemetry traces to the schema.
 3. Add rolling-window drift with proper statistical tests.
 4. Alert delivery (e.g. Azure Monitor) with human-in-the-loop acknowledgement.
+
+## Continuous observation
+
+```bash
+agent-monitor watch --config sources.json --output monitor/ --interval 5
+```
+
+The platform builds this configuration automatically and starts/stops the worker.
+A standalone configuration uses an existing policy and read-only kubeconfig:
+
+```json
+{
+  "instance": "local-lab",
+  "policy": "/absolute/path/policy.json",
+  "retentionHours": 24,
+  "sources": [
+    {"type":"kubernetes", "name":"aks", "namespace":"agentic-ops", "kubeconfig":"/absolute/path/readonly.json"},
+    {"type":"jsonl", "name":"rag", "agent":"rag", "path":"/absolute/path/rag.jsonl"},
+    {"type":"jsonl", "name":"ci", "agent":"ci-repair", "path":"/absolute/path/ci.jsonl"}
+  ]
+}
+```
+
+Create JSONL source files before starting; an empty readable source is idle, a
+missing file is a collection failure. Touch `monitor/stop` to stop cooperatively;
+remove it before restarting. `--once` collects one cycle for diagnostics/tests.
+
+SQLite preserves event IDs, file positions and deduplicated alerts across restarts.
+`health.json` exposes source health, observed agent counts, last event timestamps
+and token coverage. `findings.json` exposes current anomalies. Invalid records,
+source identity mismatches, unready pods, source failures, stalled runs and terminal
+execution errors are surfaced. In-flight repair claims wait for a terminal run
+before a missing verification becomes an alert. Valid RAG abstentions are accepted.
+
+Kubernetes collection requires kubectl and a credential scoped to get/list pods and
+get pods/log in the agent namespace. Runtime collection never runs create, patch,
+exec or delete. Only explicit canonical event envelopes are ingested from pod logs;
+ordinary log bodies are discarded. Log retention/tail limits and host downtime can
+cause gaps; this polling lab collector is not a durable distributed telemetry bus.
+The platform records credential expiry and detects stale worker reports.
+
+Provider token usage is observed where available; absent usage and dollar costs
+are not estimated. Citation membership checks do not prove answer truth. Telemetry
+is not tamper-proof: the application instrumentation and source credentials are
+part of the trust boundary.
