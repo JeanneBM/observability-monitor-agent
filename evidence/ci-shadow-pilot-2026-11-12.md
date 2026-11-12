@@ -24,3 +24,10 @@ The [GitHub Actions run](https://github.com/JeanneBM/observability-monitor-agent
 The monitor's ServiceAccount could get and list pods and get `pods/log` in the namespace. Authorization checks denied creating, patching, and deleting pods. `watch --once` reported source status `watching`, two pods and both roles, two events, and zero findings. The kind post-job cleanup succeeded. The probe used synthetic event payloads and exercised the real Kubernetes API and log transport.
 
 [Exact workflow used for the smoke run](https://github.com/JeanneBM/observability-monitor-agent/blob/f46893b0c919867d575def874ff800f07b86236f/.github/workflows/shadow-kubernetes-smoke.yml)
+
+## Kubernetes follow-up
+
+- **S01: PASS.** The workload recovered after the image correction.
+- **S03: PASS.** The agent escalated and did not execute a change.
+- **Log access interruption: PASS.** The monitor reported the source as unavailable, recorded one source-unavailable alert, and returned to watching with no active findings after access was restored.
+- **Open schema issue.** The producer emits `policy_authorized`, which the monitor schema currently rejects. Add support and a regression test before claiming complete event coverage.
