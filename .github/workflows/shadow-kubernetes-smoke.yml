@@ -1,0 +1,75 @@
+name: Kubernetes read-only shadow smoke
+on:
+  push:
+    paths: ['.github/workflows/shadow-kubernetes-smoke.yml']
+  pull_request:
+    paths: ['.github/workflows/shadow-kubernetes-smoke.yml']
+permissions:
+  contents: read
+jobs:
+  pod-logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: shadow-smoke
+      - name: Verify a read-only pod log source
+        run: |
+          set -euo pipefail
+          python -m pip install -e .
+          ns=shadow-smoke
+          kubectl create namespace "$ns"
+          kubectl -n "$ns" create serviceaccount shadow-reader
+          kubectl -n "$ns" create role shadow-reader --verb=get,list --resource=pods
+          kubectl -n "$ns" create role shadow-logs --verb=get --resource=pods --subresource=log
+          kubectl -n "$ns" create rolebinding shadow-reader --role=shadow-reader --serviceaccount="$ns:shadow-reader"
+          kubectl -n "$ns" create rolebinding shadow-logs --role=shadow-logs --serviceaccount="$ns:shadow-reader"
+          for role in diagnostic remediation; do
+            kubectl -n "$ns" run "$role" --image=busybox:1.36 --labels="app=agentic-ops,role=$role" --restart=Never \
+              --env="ROLE=$role" --command -- sh -c 'printf "{\"agent_monitor_event\":{\"id\":\"%s-log\",\"ts\":%s,\"agent\":\"%s\",\"run_id\":\"smoke\",\"type\":\"run_finished\",\"status\":\"success\"}}\n" "$ROLE" "$(date +%s)" "$ROLE"; sleep 300'
+          done
+          kubectl -n "$ns" wait --for=condition=Ready pod -l app=agentic-ops --timeout=120s
+          temp=$(mktemp -d)
+          export SMOKE_DIR="$temp"
+          umask 077
+          kubectl config view --minify --flatten -o json > "$temp/admin.json"
+          kubectl -n "$ns" create token shadow-reader > "$temp/token"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          root = Path(os.environ['SMOKE_DIR'])
+          config = json.loads((root / 'admin.json').read_text())
+          config['users'] = [{'name': 'shadow-reader', 'user': {'token': (root / 'token').read_text().strip()}}]
+          config['contexts'][0]['context']['user'] = 'shadow-reader'
+          kubeconfig = root / 'reader.json'
+          kubeconfig.write_text(json.dumps(config))
+          (root / 'sources.json').write_text(json.dumps({
+              'instance': 'kind-shadow-smoke', 'policy': str(Path('examples/policy.json').resolve()),
+              'sources': [{'type': 'kubernetes', 'name': 'kind', 'namespace': 'shadow-smoke',
+                           'kubeconfig': str(kubeconfig)}],
+          }))
+          PY
+          rm "$temp/admin.json" "$temp/token"
+          reader=(kubectl --kubeconfig "$temp/reader.json" -n "$ns")
+          for verb in create patch delete; do
+            answer=$("${reader[@]}" auth can-i "$verb" pods || true)
+            test "$answer" = no
+          done
+          agent-monitor watch --config "$temp/sources.json" --output "$temp/output" --once
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          output = Path(os.environ['SMOKE_DIR']) / 'output'
+          health = json.loads((output / 'health.json').read_text())
+          findings = json.loads((output / 'findings.json').read_text())
+          assert health['sources']['kind'] == {'status': 'watching', 'roles': ['diagnostic', 'remediation'], 'pods': 2}, health
+          assert health['events'] == 2 and not findings, (health, findings)
+          print('Kubernetes pod logs: 2 events collected, 0 findings; create/patch/delete denied')
+          PY
