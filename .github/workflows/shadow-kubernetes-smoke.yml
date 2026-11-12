@@ -26,7 +26,7 @@ jobs:
           kubectl create namespace "$ns"
           kubectl -n "$ns" create serviceaccount shadow-reader
           kubectl -n "$ns" create role shadow-reader --verb=get,list --resource=pods
-          kubectl -n "$ns" create role shadow-logs --verb=get --resource=pods --subresource=log
+          kubectl -n "$ns" create role shadow-logs --verb=get --resource=pods/log
           kubectl -n "$ns" create rolebinding shadow-reader --role=shadow-reader --serviceaccount="$ns:shadow-reader"
           kubectl -n "$ns" create rolebinding shadow-logs --role=shadow-logs --serviceaccount="$ns:shadow-reader"
           for role in diagnostic remediation; do
@@ -37,7 +37,7 @@ jobs:
           temp=$(mktemp -d)
           export SMOKE_DIR="$temp"
           umask 077
-          kubectl config view --minify --flatten -o json > "$temp/admin.json"
+          kubectl config view --minify --flatten --raw -o json > "$temp/admin.json"
           kubectl -n "$ns" create token shadow-reader > "$temp/token"
           python - <<'PY'
           import json, os
